@@ -20,17 +20,21 @@ class BitnetAttentionConfig(PretrainedConfig):
 
     def __init__(
         self,
+        bias: bool = False,
         attn_pdrop: float = 0,
         clip_qkv: Optional[float] = None,
         kv_n_heads: int = 1,
         rope_theta: float = 10000.0,
+        rope_scaling: Optional[str] = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
+        self.bias = bias
         self.attn_pdrop = attn_pdrop
         self.clip_qkv = clip_qkv
         self.kv_n_heads = kv_n_heads
         self.rope_theta = rope_theta
+        self.rope_scaling = rope_scaling
 
         for k in ['model_type']:
             if k in kwargs:
@@ -185,9 +189,11 @@ class BitnetConfig(PretrainedConfig):
         attn_config: Optional[BitnetAttentionConfig] = None,
         ffn_config: Optional[BitnetFFNConfig] = None,
         use_cache: bool = True,
+        rms_norm_eps=1e-6,
         initializer_range: float = 0.02,
         output_router_logits: bool = False,
         router_aux_loss_coef: float = 0.05,
+        use_last_bit_linear: bool = False,
         **kwargs: Any,
     ):
         if attn_config is None:
@@ -212,9 +218,11 @@ class BitnetConfig(PretrainedConfig):
         self.resid_pdrop = resid_pdrop
         self.emb_pdrop = emb_pdrop
         self.use_cache = use_cache
+        self.rms_norm_eps = rms_norm_eps
         self.initializer_range = initializer_range
         self.output_router_logits = output_router_logits
         self.router_aux_loss_coef = router_aux_loss_coef
+        self.use_last_bit_linear = use_last_bit_linear
 
         tie_word_embeddings = kwargs.pop('tie_word_embeddings', False)
         if tie_word_embeddings:

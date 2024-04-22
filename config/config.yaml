@@ -1,0 +1,8 @@
+defaults:
+  - model: bitnet
+  - train: train
+
+
+
+seed: 777
+num_token_mult: 1
