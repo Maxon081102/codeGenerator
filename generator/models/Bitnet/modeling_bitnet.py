@@ -61,43 +61,29 @@ class RMSNorm(nn.Module):
 
 
 class BitLinear(nn.Linear):
-    def __init__(self, in_features, out_features, bias=True, num_groups=1):
+    def __init__(self, in_features, out_features, bias=True):
         assert bias == False
         super(BitLinear, self).__init__(in_features, out_features, bias)
-        self.num_groups = num_groups
+        self.norm = RMSNorm(in_features)
+        self.b = 8
+        self.Q_b =  2 ** (self.b - 1)
         self.eps = 1e-5
 
     def binarize_weights(self):
-        gamma = torch.abs(self.weight).mean()
-        normalized_weights = self.weight / (gamma + self.eps)
-        clipped_weights = torch.clamp(torch.round(normalized_weights), -1, 1)
-        return clipped_weights
+        gamma = 1.0 / torch.abs(self.weight).mean().clamp_(min=self.eps)
+        normalized_weights = (self.weight * gamma).round().clamp_(-1, 1) / gamma
+        return self.weight + (normalized_weights - self.weight).detach()
 
-    def quantize_activations(self, x, b=8):
-        Q_b = 2 ** (b - 1)
-        gamma = x.abs().max()
-        quantized_x = torch.clamp(
-            x * Q_b / (gamma + self.eps), -Q_b + self.eps, Q_b - self.eps
-        )
-        return quantized_x
+    def quantize_activations(self, x):
+        gamma = (self.Q_b - 1) / x.abs().max(dim=-1, keepdim=True).values.clamp_(min=self.eps)
+        quantized_x = (x * gamma).round().clamp_(-self.Q_b, self.Q_b - 1) / gamma
+        return x + (quantized_x - x).detach()
 
     def forward(self, input):
+        x = self.quantize_activations(self.norm(input))
         binarized_weights = self.binarize_weights()
-        output = torch.nn.functional.linear(input, binarized_weights)
-        output = self.quantize_activations(output)
+        output = torch.nn.functional.linear(x, binarized_weights)
         return output
-
-    def verify_clamping(self):
-        # Check if any weights are outside the bounds [-1, 1]
-        if not torch.all(torch.ge(self.weight, -1)) or not torch.all(
-            torch.le(self.weight, 1)
-        ):
-            # print("Warning: Weights are not correctly clamped.")
-            pass
-            return False
-        else:
-            print("All weights are correctly clamped between [-1, 1].")
-            return True
 
 
 class BitnetRotaryEmbedding(nn.Module):
@@ -697,10 +683,10 @@ class BitnetDecoderLayer(nn.Module):
         )
 
         self.mlp = BitnetMLP(config)
-        self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        # self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        # self.post_attention_layernorm = RMSNorm(
+        #     config.hidden_size, eps=config.rms_norm_eps
+        # )
 
     def forward(
         self,
@@ -736,7 +722,7 @@ class BitnetDecoderLayer(nn.Module):
 
         residual = hidden_states
 
-        hidden_states = self.input_layernorm(hidden_states)
+        # hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
         hidden_states, self_attn_weights, present_key_value = self.self_attn(
@@ -753,7 +739,7 @@ class BitnetDecoderLayer(nn.Module):
 
         # Fully Connected
         residual = hidden_states
-        hidden_states = self.post_attention_layernorm(hidden_states)
+        # hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
 

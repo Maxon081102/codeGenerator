@@ -1,10 +1,10 @@
-d_model: 256
+d_model: 512
 n_heads: 16
-n_layers: 10
-max_seq_len: 512
+n_layers: 24
+max_seq_len: 256
 use_last_bit_linear: false
 
 
-ffn_hidden_size: 512
+ffn_hidden_size: 767
 
-kv_n_heads: 4
+kv_n_heads: 16
