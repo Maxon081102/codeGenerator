@@ -22,9 +22,11 @@ from transformers import (
 
 from adan import Adan
 
-from train_utils import MyTrainer
-from lr_scheduler import BitnetLRScheduler
+from generator.train.TrainerWithParent import TrainerWithParent
+from generator.train.train_utils.lr_scheduler import BitnetLRScheduler
+from generator.models.Llama.modeling_llama import LlamaForCausalLM
 from generator.models.Bitnet.modeling_bitnet import BitnetForCausalLM
+from generator.train.ModelWithParent import ModelWithParent
 from generator.models.Bitnet.configuration_bitnet import (
     BitnetConfig,
     BitnetAttentionConfig,
@@ -83,15 +85,27 @@ def launch(cfg):
         )
 
     context_length = 256
-    tokenizer = AutoTokenizer.from_pretrained("deepseek-ai/deepseek-coder-1.3b-base", trust_remote_code=True, cache_dir="/home/maxim/models")
-    parent_model = AutoModelForCausalLM.from_pretrained(
-        "deepseek-ai/deepseek-coder-1.3b-base", 
-        trust_remote_code=True, 
-        cache_dir="/home/maxim/models",
-        attn_implementation="eager",
-        torch_dtype=torch.float16,
-    )
-    vocab_size = 32256
+    tokenizer = AutoTokenizer.from_pretrained("bigcode/tiny_starcoder_py", trust_remote_code=True, cache_dir="/home/maxim/models")
+    # tokenizer = AutoTokenizer.from_pretrained("deepseek-ai/deepseek-coder-1.3b-base", trust_remote_code=True, cache_dir="/home/maxim/models")
+    # model_parent_config = AutoConfig.from_pretrained(
+    #     "deepseek-ai/deepseek-coder-1.3b-base", 
+    #     trust_remote_code=True, 
+    #     cache_dir="/home/maxim/models",
+    #     attn_implementation="eager",
+    # )
+    # model_path = '/home/maxim/models/models--deepseek-ai--deepseek-coder-1.3b-base/snapshots/c919139c3a9b4070729c8b2cca4847ab29ca8d94'
+    # parent_model = LlamaForCausalLM.from_pretrained(
+    #     config=model_parent_config,
+    #     pretrained_model_name_or_path=model_path,
+    # )
+    # parent_model = AutoModelForCausalLM.from_pretrained(
+    #     "deepseek-ai/deepseek-coder-1.3b-base", 
+    #     trust_remote_code=True, 
+    #     cache_dir="/home/maxim/models",
+    #     attn_implementation="eager",
+    #     # torch_dtype=torch.float16,
+    # )
+    vocab_size = 49152
 
     outputs = tokenizer(
         raw_datasets["train"][:2]["content"],
@@ -122,6 +136,7 @@ def launch(cfg):
     tokenized_datasets = raw_datasets.map(
         tokenize, batched=True, remove_columns=raw_datasets["train"].column_names
     )
+    del raw_datasets
 
     attention_config = BitnetAttentionConfig(
         kv_n_heads=cfg.model.kv_n_heads,
@@ -145,9 +160,12 @@ def launch(cfg):
 
     # model = BitnetForCausalLM(model_config).to(torch.float16)
     # to_small = ToSmallEmb(parent_model.model.embed_tokens, 2048, cfg.model.d_model).to(torch.float16)
-    model = BitnetForCausalLM(model_config).to(torch.float32)
-    to_small = ToSmallEmb(parent_model.model.embed_tokens, 2048, cfg.model.d_model).to(torch.float32)
-    model.model.embed_tokens = to_small
+    # model = BitnetForCausalLM(model_config).to(torch.float32)
+    # to_small = ToSmallEmb(parent_model.model.embed_tokens, 2048, cfg.model.d_model).to(torch.float32)
+    # to_small = ToSmallEmb(parent_model.model.embed_tokens, 2048, cfg.model.d_model)
+    # model.model.embed_tokens = to_small
+    # parent_model = parent_model.half()
+    model = ModelWithParent(config=model_config)
 
     model_name = "Bitnet"
     model_size = sum(t.numel() for t in model.parameters())
@@ -170,11 +188,13 @@ def launch(cfg):
         warmup_ratio=cfg.train.warmup_ratio,
         # lr_scheduler_type=cfg.train.lr_scheduler_type,
         # learning_rate=cfg.train.learning_rate,
-        save_steps=1000,
+        save_steps=500,
         fp16=True,
         # adam_epsilon=cfg.train.adam_epsilon,
         # use_cpu=True,
         max_grad_norm=None,
+        # remove_unused_columns=False,
+        save_safetensors=False,
     )
     
     # optimizer = Adan(
@@ -195,8 +215,8 @@ def launch(cfg):
     #     second_weight_decay=0,
     # )
 
-    trainer = MyTrainer(
-        parent_model,
+    # trainer = Trainer(
+    trainer = TrainerWithParent(
         config_opt_sch=cfg,
         model=model,
         tokenizer=tokenizer,

@@ -266,6 +266,7 @@ class BitnetAttention(nn.Module):
         output_attentions: bool = False,
         use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
+        return_attentions_before_softmax: bool = False,
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         bsz, q_len, _ = hidden_states.size()
@@ -307,6 +308,9 @@ class BitnetAttention(nn.Module):
         if attention_mask is not None:  # no matter the length, we just slice it
             causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
             attn_weights = attn_weights + causal_mask
+        
+        if return_attentions_before_softmax:
+            attentions_for_output = attn_weights
 
         # upcast attention to fp32
         attn_weights = nn.functional.softmax(
@@ -329,8 +333,11 @@ class BitnetAttention(nn.Module):
 
         attn_output = self.o_proj(attn_output)
 
-        if not output_attentions:
+        if not output_attentions and not return_attentions_before_softmax:
             attn_weights = None
+        elif return_attentions_before_softmax:
+            attn_weights = (attn_weights, attentions_for_output)
+            
 
         return attn_output, attn_weights, past_key_value
 
@@ -697,6 +704,7 @@ class BitnetDecoderLayer(nn.Module):
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
         cache_position: Optional[torch.LongTensor] = None,
+        return_attentions_before_softmax: bool = False,
         **kwargs,
     ) -> Tuple[
         torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]
@@ -733,6 +741,7 @@ class BitnetDecoderLayer(nn.Module):
             output_attentions=output_attentions,
             use_cache=use_cache,
             cache_position=cache_position,
+            return_attentions_before_softmax=return_attentions_before_softmax,
             **kwargs,
         )
         hidden_states = residual + hidden_states
@@ -939,6 +948,7 @@ class BitnetModel(BitnetPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
+        return_attentions_before_softmax: bool = False,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = (
             output_attentions
@@ -1028,6 +1038,7 @@ class BitnetModel(BitnetPreTrainedModel):
                     output_attentions=output_attentions,
                     use_cache=use_cache,
                     cache_position=cache_position,
+                    return_attentions_before_softmax=return_attentions_before_softmax,
                 )
 
             hidden_states = layer_outputs[0]
@@ -1193,6 +1204,7 @@ class BitnetForCausalLM(BitnetPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
+        return_attentions_before_softmax: bool = False,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:
@@ -1245,6 +1257,7 @@ class BitnetForCausalLM(BitnetPreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             cache_position=cache_position,
+            return_attentions_before_softmax=return_attentions_before_softmax,
         )
 
         hidden_states = outputs[0]
