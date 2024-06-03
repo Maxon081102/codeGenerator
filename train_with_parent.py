@@ -1,6 +1,7 @@
 """Script for a training run."""
 
 import hydra
+from hydra.core.hydra_config import HydraConfig
 
 import os
 import copy
@@ -51,6 +52,9 @@ log = logging.getLogger(__name__)
 def launch(cfg):
     # os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.gpu)
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    final_model_dir = os.path.join(HydraConfig.get().runtime.output_dir, 'finalModel')
+    if not os.path.exists(final_model_dir):
+        os.makedirs(final_model_dir)
     transformers.set_seed(cfg.seed)
     ds_train = load_dataset(
         "codeparrot/codeparrot-clean-train",
@@ -228,6 +232,7 @@ def launch(cfg):
     )
 
     trainer.train()
+    trainer.save_model(output_dir=final_model_dir)
 
 
 if __name__ == "__main__":
